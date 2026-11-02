@@ -1,0 +1,16 @@
+{
+  "psc": {
+    "n_images": 100,
+    "perturbations_per_image": 8,
+    "gradcam": {
+      "psc_spearman": 0.5092465170876643,
+      "map_change_when_prediction_stable": 0.0493107063569712,
+      "map_change_when_prediction_moves": 0.2712949715404366
+    },
+    "gradcam++": {
+      "psc_spearman": 0.4409492743096647,
+      "map_change_when_prediction_stable": 0.036874515538987,
+      "map_change_when_prediction_moves": 0.13111347068881501
+    }
+  }
+}

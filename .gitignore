@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+
+# Local Python environments
+venv/
+.venv/
+
+# Result archives (large; source artifacts are kept in the folders they came from)
+*.zip
+
+# Local Claude settings
+.claude/

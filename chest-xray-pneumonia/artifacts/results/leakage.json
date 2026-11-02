@@ -1,0 +1,5 @@
+{
+  "val_images": 521,
+  "val_images_sharing_patient_with_train": 323,
+  "leak_fraction": 0.6199616122840691
+}

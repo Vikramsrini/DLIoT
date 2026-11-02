@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.env
+
+# Data (too large to commit)
+data/
+
+# Trained models (large binary files)
+models/*.keras
+models/*.h5
+
+# Keep plots and logs
+!models/*.png
+!models/*.csv
+
+# Jupyter
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# Kaggle credentials (NEVER commit)
+kaggle.json
+~/.kaggle/
+
+# TrustEdge-CXR artifacts (regenerate with run_pipeline.sh or the Colab notebook)
+artifacts/cache/
+artifacts/teacher/embeddings.npz
+artifacts/student_savedmodel/
+artifacts/**/*.weights.h5
+artifacts/**/*.keras
+artifacts/edge_reports.jsonl
+artifacts/pipeline.log

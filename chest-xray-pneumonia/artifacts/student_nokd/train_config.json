@@ -1,0 +1,22 @@
+{
+  "data_dir": "/content/data/chest_xray",
+  "artifacts": "/content/trustedge/artifacts",
+  "seed": 42,
+  "limit": 0,
+  "no_kd": true,
+  "kd_alpha": 0.5,
+  "kd_temperature": 4.0,
+  "gamma": 2.0,
+  "epochs_head": 8,
+  "epochs_finetune": 15,
+  "unfreeze": 40,
+  "lr_head": 0.001,
+  "lr_finetune": 5e-05,
+  "batch_size": 32,
+  "cache": "clahe",
+  "out": "student_nokd",
+  "kd": false,
+  "alpha_pos": 0.258952551477171,
+  "n_train": 4468,
+  "n_val": 764
+}

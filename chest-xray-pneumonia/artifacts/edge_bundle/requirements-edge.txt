@@ -1,0 +1,5 @@
+# Edge node (Raspberry Pi / ARM64 Linux). No TensorFlow needed.
+numpy>=1.24
+pillow>=10.0
+opencv-python-headless>=4.8   # CLAHE preprocessing
+ai-edge-litert>=1.0           # TFLite interpreter (or: tflite-runtime)
