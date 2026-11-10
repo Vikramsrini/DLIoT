@@ -59,19 +59,19 @@ def set_cell_shading(cell, color_hex):
     tcPr.append(shd)
 
 def apply_table_borders(table, color="000000"):
-    """Applies clean academic 3-line borders to a table."""
+    """Explicitly removes ALL borders from a table (fully borderless layout)."""
     tblPr = table._element.xpath('w:tblPr')
     if tblPr:
         borders = parse_xml(r'''
             <w:tblBorders %s>
-                <w:top w:val="single" w:sz="12" w:space="0" w:color="%s"/>
-                <w:left w:val="none"/>
-                <w:bottom w:val="single" w:sz="12" w:space="0" w:color="%s"/>
-                <w:right w:val="none"/>
-                <w:insideH w:val="single" w:sz="4" w:space="0" w:color="D3D3D3"/>
-                <w:insideV w:val="none"/>
+                <w:top w:val="none" w:sz="0" w:space="0"/>
+                <w:left w:val="none" w:sz="0" w:space="0"/>
+                <w:bottom w:val="none" w:sz="0" w:space="0"/>
+                <w:right w:val="none" w:sz="0" w:space="0"/>
+                <w:insideH w:val="none" w:sz="0" w:space="0"/>
+                <w:insideV w:val="none" w:sz="0" w:space="0"/>
             </w:tblBorders>
-        ''' % (nsdecls('w'), color, color))
+        ''' % nsdecls('w'))
         tblPr[0].append(borders)
 
 def enforce_document_defaults(doc):
@@ -141,7 +141,7 @@ def add_chapter_heading(doc, chapter_num, title):
     p.paragraph_format.space_after = Pt(12)
     p.paragraph_format.line_spacing = 1.15
     p.paragraph_format.left_indent = Inches(0)
-    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = p.add_run(f"CHAPTER {chapter_num}\n{title.upper()}")
     run.font.name = "Times New Roman"
     run.font.size = Pt(16)
@@ -296,8 +296,28 @@ def add_table_caption(doc, caption_text):
     r_cap.font.color.rgb = BLACK
     return p_cap
 
-def populate_table_data(table, data, col_widths=None, header_bg="EAEAEA", alt_bg="FAFAFA"):
-    """Fills table data with pure black text and clean academic borders."""
+def add_table_note(doc, note_text):
+    """Adds a small italic 'Note.' paragraph directly below a table."""
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    p.paragraph_format.space_before = Pt(4)
+    p.paragraph_format.space_after = Pt(14)
+    p.paragraph_format.line_spacing = 1.15
+    r1 = p.add_run("Note. ")
+    r1.font.name = "Times New Roman"
+    r1.font.size = Pt(10)
+    r1.font.bold = True
+    r1.font.italic = True
+    r1.font.color.rgb = BLACK
+    r2 = p.add_run(note_text)
+    r2.font.name = "Times New Roman"
+    r2.font.size = Pt(10)
+    r2.font.italic = True
+    r2.font.color.rgb = BLACK
+    return p
+
+def populate_table_data(table, data, col_widths=None, header_bg=None, alt_bg=None):
+    """Fills table data with pure black text on a fully borderless, shade-free layout."""
     for row_idx, row_data in enumerate(data):
         row = table.rows[row_idx]
         is_header = (row_idx == 0)
@@ -315,14 +335,53 @@ def populate_table_data(table, data, col_widths=None, header_bg="EAEAEA", alt_bg
             if is_header:
                 run.font.size = Pt(10)
                 run.font.bold = True
-                set_cell_shading(cell, header_bg)
+                if header_bg:
+                    set_cell_shading(cell, header_bg)
             else:
                 run.font.size = Pt(9.5)
-                if row_idx % 2 == 1:
+                if alt_bg and row_idx % 2 == 1:
                     set_cell_shading(cell, alt_bg)
             set_cell_margins(cell, top=70, bottom=70, left=100, right=100)
             if col_widths and col_idx < len(col_widths):
                 cell.width = col_widths[col_idx]
+
+def add_positional_tab(run, alignment="right", leader="dot"):
+    """Inserts a positional tab (relative to the page margin) into a run."""
+    ptab = parse_xml(r'<w:ptab %s w:alignment="%s" w:relativeTo="margin" w:leader="%s"/>'
+                     % (nsdecls('w'), alignment, leader))
+    run._r.append(ptab)
+
+def add_toc_entry(doc, num, title, page, bold=False, space_after=2):
+    """Renders one Table-of-Contents entry with a dot leader and right-aligned page number."""
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(space_after)
+    p.paragraph_format.line_spacing = 1.15
+    p.paragraph_format.left_indent = Inches(0)
+    p.paragraph_format.right_indent = Inches(0)
+
+    if num:
+        r_num = p.add_run(f"{num}\t")
+        r_num.font.name = "Times New Roman"
+        r_num.font.size = Pt(11)
+        r_num.font.bold = True
+        r_num.font.color.rgb = BLACK
+
+    r_title = p.add_run(title)
+    r_title.font.name = "Times New Roman"
+    r_title.font.size = Pt(11)
+    r_title.font.bold = bold
+    r_title.font.color.rgb = BLACK
+
+    # Dot leader + right-aligned page number (relative to the right margin)
+    r_tab = p.add_run("")
+    add_positional_tab(r_tab, alignment="right", leader="dot")
+    r_page = p.add_run(str(page))
+    r_page.font.name = "Times New Roman"
+    r_page.font.size = Pt(11)
+    r_page.font.bold = bold
+    r_page.font.color.rgb = BLACK
+    return p
 
 def build_full_report():
     doc = docx.Document()
@@ -532,51 +591,54 @@ def build_full_report():
     # 6. TABLE OF CONTENTS
     add_title_p(doc, "TABLE OF CONTENTS", size_pt=15, bold=True, space_before=16, space_after=14)
     
-    toc_data = [
-        ["Chapter No.", "Title", "Page No."],
-        ["", "BONAFIDE CERTIFICATE", "ii"],
-        ["", "DECLARATION BY THE CANDIDATE", "iii"],
-        ["", "ACKNOWLEDGEMENTS", "iv"],
-        ["", "ABSTRACT", "v"],
-        ["", "LIST OF FIGURES", "viii"],
-        ["", "LIST OF TABLES", "ix"],
-        ["", "LIST OF ABBREVIATIONS / NOMENCLATURE", "x"],
-        ["1", "INTRODUCTION", "1"],
-        ["1.1", "Background and Clinical Motivation", "1"],
-        ["1.2", "Industry and Healthcare Domain Context", "2"],
-        ["1.3", "Problem Statement and Core Bottlenecks", "3"],
-        ["1.4", "Objectives of the Case Study", "4"],
-        ["1.5", "Scope and Limitations", "5"],
-        ["1.6", "Organization of the Report", "6"],
-        ["2", "LITERATURE SURVEY", "7"],
-        ["2.1", "Introduction to Thoracic Radiography AI", "7"],
-        ["2.2", "Critical Review of Existing Approaches", "8"],
-        ["2.3", "Comparative Synthesis and Gap Identification", "11"],
-        ["3", "METHODOLOGY / FRAMEWORK DESIGN", "13"],
-        ["3.1", "Technical Approach Overview", "13"],
-        ["3.2", "Data Ingestion, Patient Hashing, and CLAHE Caching", "14"],
-        ["3.3", "End-to-End System Architecture", "16"],
-        ["3.4", "Implementation Strategy and Software Stack", "18"],
-        ["4", "CASE STUDY IMPLEMENTATION / ANALYSIS", "20"],
-        ["4.1", "Execution Walkthrough and Step-by-Step Analysis", "20"],
-        ["4.2", "Core Mathematical Algorithms and Formulations", "23"],
-        ["4.3", "Engineering Challenges Faced and Mitigation Strategies", "26"],
-        ["5", "RESULTS AND DISCUSSION", "28"],
-        ["5.1", "Experimental Findings and Empirical Benchmark", "28"],
-        ["5.2", "In-Depth Scientific and Clinical Discussion", "34"],
-        ["5.3", "Practical Implementations in Real-World Edge Systems", "37"],
-        ["6", "CONCLUSION AND FUTURE SCOPE", "39"],
-        ["6.1", "Summary of Technical Contributions", "39"],
-        ["6.2", "Future Research and Engineering Scope", "40"],
-        ["", "REFERENCES", "42"],
-        ["", "APPENDIX A: Edge Runtime Deployment Guide", "45"],
-        ["", "APPENDIX B: Evaluation Configuration Parameters", "47"]
+    # Front-matter entries (Roman numerals)
+    front_matter_entries = [
+        ("", "BONAFIDE CERTIFICATE", "ii"),
+        ("", "DECLARATION BY THE CANDIDATE", "iii"),
+        ("", "ACKNOWLEDGEMENTS", "iv"),
+        ("", "ABSTRACT", "v"),
+        ("", "LIST OF FIGURES", "viii"),
+        ("", "LIST OF TABLES", "ix"),
+        ("", "LIST OF ABBREVIATIONS / NOMENCLATURE", "x"),
     ]
-    
-    t_toc = doc.add_table(rows=len(toc_data), cols=3)
-    t_toc.alignment = WD_TABLE_ALIGNMENT.CENTER
-    apply_table_borders(t_toc)
-    populate_table_data(t_toc, toc_data, col_widths=[Inches(1.2), Inches(3.7), Inches(0.87)])
+    # Body entries (Arabic numerals)
+    body_entries = [
+        ("1", "INTRODUCTION", "1", True),
+        ("1.1", "Background and Clinical Motivation", "1", False),
+        ("1.2", "Industry and Healthcare Domain Context", "2", False),
+        ("1.3", "Problem Statement and Core Bottlenecks", "2", False),
+        ("1.4", "Objectives of the Case Study", "3", False),
+        ("1.5", "Scope and Limitations", "4", False),
+        ("1.6", "Organization of the Report", "5", False),
+        ("2", "LITERATURE SURVEY", "6", True),
+        ("2.1", "Introduction to Thoracic Radiography AI", "6", False),
+        ("2.2", "Critical Review of Existing Approaches", "6", False),
+        ("2.3", "Comparative Synthesis and Gap Identification", "8", False),
+        ("3", "METHODOLOGY / FRAMEWORK DESIGN", "10", True),
+        ("3.1", "Technical Approach Overview", "10", False),
+        ("3.2", "Data Ingestion, Patient Hashing, and CLAHE Caching", "10", False),
+        ("3.3", "End-to-End System Architecture", "12", False),
+        ("3.4", "Implementation Strategy and Software Stack", "13", False),
+        ("4", "CASE STUDY IMPLEMENTATION / ANALYSIS", "15", True),
+        ("4.1", "Execution Walkthrough and Step-by-Step Analysis", "15", False),
+        ("4.2", "Core Mathematical Algorithms and Formulations", "17", False),
+        ("4.3", "Engineering Challenges Faced and Mitigation Strategies", "20", False),
+        ("5", "RESULTS AND DISCUSSION", "21", True),
+        ("5.1", "Experimental Findings and Empirical Benchmark", "21", False),
+        ("5.2", "In-Depth Scientific and Clinical Discussion", "26", False),
+        ("5.3", "Practical Implementations in Real-World Edge Systems", "27", False),
+        ("6", "CONCLUSION AND FUTURE SCOPE", "29", True),
+        ("6.1", "Summary of Technical Contributions", "29", False),
+        ("6.2", "Future Research and Engineering Scope", "30", False),
+        ("", "REFERENCES", "31", True),
+        ("", "APPENDIX A: Edge Runtime Deployment Guide", "33", False),
+        ("", "APPENDIX B: Evaluation Configuration Parameters", "33", False),
+    ]
+
+    for num, title, page in front_matter_entries:
+        add_toc_entry(doc, num, title, page, bold=False, space_after=2)
+    for num, title, page, bold in body_entries:
+        add_toc_entry(doc, num, title, page, bold=bold, space_after=2)
     
     doc.add_page_break()
     
@@ -585,14 +647,14 @@ def build_full_report():
     
     figures_data = [
         ["Figure No.", "Figure Caption", "Page No."],
-        ["Figure 3.1", "Comparison of Pediatric Chest Radiographs Across Diagnostic Classes (Raw vs. CLAHE Preprocessed)", "15"],
-        ["Figure 3.2", "Comprehensive TrustEdge-CXR End-to-End Architectural Pipeline and Triage Flow", "17"],
-        ["Figure 4.1", "Training and Validation Loss and AUC Trajectories Across Distillation Phases", "22"],
-        ["Figure 4.2", "Federated Learning Optimization Across 5 Heterogeneous Hospital Nodes (Dirichlet α=0.5)", "23"],
-        ["Figure 5.1", "Confusion Matrices Across Baseline, Teacher, Student, and Edge Deployments", "30"],
-        ["Figure 5.2", "Comparative Receiver Operating Characteristic (ROC) Curves on Official Test Cohort", "31"],
-        ["Figure 5.3", "Reliability Diagrams and Confidence Calibration (Pre- vs. Post-Temperature Scaling)", "32"],
-        ["Figure 5.4", "Saliency Heatmap Visualizations (Grad-CAM vs. Grad-CAM++ Attribution Quality)", "33"]
+        ["Figure 3.1", "Comparison of Pediatric Chest Radiographs Across Diagnostic Classes (Raw vs. CLAHE Preprocessed)", "12"],
+        ["Figure 3.2", "Comprehensive TrustEdge-CXR End-to-End Architectural Pipeline and Triage Flow", "13"],
+        ["Figure 4.1", "Training and Validation Loss and AUC Trajectories Across Distillation Phases", "17"],
+        ["Figure 4.2", "Federated Learning Optimization Across 5 Heterogeneous Hospital Nodes (Dirichlet α=0.5)", "17"],
+        ["Figure 5.1", "Confusion Matrices Across Baseline, Teacher, Student, and Edge Deployments", "22"],
+        ["Figure 5.2", "Comparative Receiver Operating Characteristic (ROC) Curves on Official Test Cohort", "23"],
+        ["Figure 5.3", "Reliability Diagrams and Confidence Calibration (Pre- vs. Post-Temperature Scaling)", "24"],
+        ["Figure 5.4", "Saliency Heatmap Visualizations (Grad-CAM vs. Grad-CAM++ Attribution Quality)", "24"]
     ]
     t_figs = doc.add_table(rows=len(figures_data), cols=3)
     t_figs.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -606,13 +668,13 @@ def build_full_report():
     
     tables_data = [
         ["Table No.", "Table Caption", "Page No."],
-        ["Table 2.1", "Comparative Synthesis of State-of-the-Art Deep Learning Approaches for Chest Radiography", "12"],
-        ["Table 3.1", "Patient-Level Cohort Stratification and Demographics Summary", "14"],
-        ["Table 4.1", "Hyperparameter Configuration Across Distillation and Optimization Phases", "25"],
-        ["Table 5.1", "Comprehensive Diagnostic Performance Benchmark on the Official 624-Patient Test Cohort", "29"],
-        ["Table 5.2", "Selective Referral Operating Characteristics Under Varying Uncertainty Thresholds", "33"],
-        ["Table 5.3", "Edge Quantization, Storage Footprint, and Runtime CPU Latency Profile", "34"],
-        ["Table 5.4", "Explanation Faithfulness and Perturbation Stability Correlation (PSC) Metrics", "34"]
+        ["Table 2.1", "Comparative Synthesis of State-of-the-Art Deep Learning Approaches for Chest Radiography", "9"],
+        ["Table 3.1", "Patient-Level Cohort Stratification and Demographics Summary", "11"],
+        ["Table 4.1", "Hyperparameter Configuration Across Distillation and Optimization Phases", "19"],
+        ["Table 5.1", "Comprehensive Diagnostic Performance Benchmark on the Official 624-Patient Test Cohort", "21"],
+        ["Table 5.2", "Selective Referral Operating Characteristics Under Varying Uncertainty Thresholds", "24"],
+        ["Table 5.3", "Edge Quantization, Storage Footprint, and Runtime CPU Latency Profile", "25"],
+        ["Table 5.4", "Explanation Faithfulness and Perturbation Stability Correlation (PSC) Metrics", "26"]
     ]
     t_tbls = doc.add_table(rows=len(tables_data), cols=3)
     t_tbls.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -671,11 +733,17 @@ def build_full_report():
     
     # CHAPTER 1: INTRODUCTION
     add_chapter_heading(doc, "1", "INTRODUCTION")
-    
+    add_body_p(doc,
+        "This chapter establishes the clinical and engineering context of the TrustEdge-CXR case study. It outlines the global "
+        "burden of pediatric pneumonia and the operational realities of edge healthcare environments, distills the five translational "
+        "bottlenecks that motivate this work, and states the objectives, scope, and limitations of the study. The chapter closes with "
+        "an outline of how the remainder of the report is organized."
+    )
+
     add_section_heading(doc, "1.1 Background and Clinical Motivation")
     add_body_p(doc, 
         "Pediatric pneumonia represents one of the most critical public health challenges worldwide, persisting as the single "
-        "largest infectious killer of children under the age of five. According to the World Health Organization (WHO) and UNICEF, "
+        "largest infectious killer of children under the age of five. According to the World Health Organization (WHO) and UNICEF [16], "
         "pneumonia accounts for approximately 14% of all deaths in children under five, claiming the lives of over 700,000 infants and "
         "young children each year. The overwhelming majority of these fatalities occur in low- and middle-income countries (LMICs), "
         "predominantly within sub-Saharan Africa and South Asia, where geographical remoteness, economic impoverishment, and systemic "
@@ -725,7 +793,7 @@ def build_full_report():
         "symmetrically, yielding high overall accuracy but unacceptably dangerous false-negative rates on subtle opacities."
     )
     add_numbered_item(doc, "2.", "Endemic Patient-Identity Data Leakage: ",
-        "Public pediatric benchmark datasets (most notably the widely cited Guangzhou Women and Children's Medical Center dataset) contain "
+        "Public pediatric benchmark datasets (most notably the widely cited Guangzhou Women and Children's Medical Center dataset [1]) contain "
         "multiple radiographs acquired from the same individual patient across longitudinal visits. Standard randomized train/test splits "
         "accidentally place images of the same child in both training and validation folds. Our empirical audit reveals that 62.0% of validation "
         "images share patient identities with the training set, causing massive data leakage that artificially inflates published academic "
@@ -757,12 +825,12 @@ def build_full_report():
         "leakage flaw and creating a strictly independent 624-patient test benchmark."
     )
     add_numbered_item(doc, "2.", "Foundation Knowledge Distillation: ",
-        "Distill diagnostic rich representations from an 86.6-million parameter Vision Transformer foundation model (RAD-DINO pre-trained on "
-        "thoracic radiographs) into a highly efficient 2.4-million parameter MobileNetV2 student model using logit-matching distillation "
-        "and class-balanced focal loss."
+        "Distill diagnostic rich representations from an 86.6-million parameter Vision Transformer foundation model (RAD-DINO [5] pre-trained on "
+        "thoracic radiographs) into a highly efficient 2.4-million parameter MobileNetV2 [3] student model using logit-matching distillation [11] "
+        "and class-balanced focal loss [10]."
     )
     add_numbered_item(doc, "3.", "Calibrated Uncertainty & Selective Referral: ",
-        "Design a post-hoc temperature scaling engine coupled with Monte Carlo Dropout epistemic variance estimation to implement a selective "
+        "Design a post-hoc temperature scaling engine [6] coupled with Monte Carlo Dropout [7] epistemic variance estimation to implement a selective "
         "referral triage mechanism that escalates uncertain cases (|p - 0.5| < τ) to senior human radiologists."
     )
     add_numbered_item(doc, "4.", "INT8 Edge Quantization & Decoupled Inference: ",
@@ -771,10 +839,10 @@ def build_full_report():
     )
     add_numbered_item(doc, "5.", "Privacy-Preserving Federated Learning: ",
         "Simulate a real-world multi-institutional deployment across five heterogeneous clinical sites under a non-IID Dirichlet distribution "
-        "(α=0.5), training a global student via Federated Averaging (FedAvg) with proximal regularization without centralizing raw images."
+        "(α=0.5), training a global student via Federated Averaging (FedAvg) [8] with proximal regularization [9] without centralizing raw images."
     )
     add_numbered_item(doc, "6.", "Explanation Quality Auditing: ",
-        "Quantify the biological fidelity and explanation stability of Grad-CAM saliency heatmaps using Perturbation Stability Correlation "
+        "Quantify the biological fidelity and explanation stability of Grad-CAM [12] saliency heatmaps using Perturbation Stability Correlation "
         "(PSC) to verify that attribution maps reflect true pathology rather than input noise."
     )
     
@@ -804,7 +872,14 @@ def build_full_report():
     
     # CHAPTER 2: LITERATURE SURVEY
     add_chapter_heading(doc, "2", "LITERATURE SURVEY / BACKGROUND STUDY")
-    
+    add_body_p(doc,
+        "This chapter critically reviews the body of knowledge relevant to automated chest radiography and trustworthy edge "
+        "intelligence. Seven foundational works spanning medical transfer learning, efficient edge architectures, confidence "
+        "calibration, uncertainty estimation, and federated optimization are examined in turn, each with its strengths and inherent "
+        "limitations. The chapter concludes with a comparative synthesis that isolates the precise technical gap addressed by this "
+        "case study."
+    )
+
     add_section_heading(doc, "2.1 Introduction to Thoracic Radiography AI")
     add_body_p(doc,
         "The application of computer vision to thoracic radiography has evolved across three distinct technological eras over the past "
@@ -822,50 +897,50 @@ def build_full_report():
         "To establish a rigorous theoretical foundation, seven prominent academic works and industrial implementations directly relevant "
         "to the TrustEdge-CXR framework are critically analyzed below:"
     )
-    add_numbered_item(doc, "1.", "Kermany et al. (Cell, 2018) — Transfer Learning in Pediatric Radiography: ",
+    add_numbered_item(doc, "1.", "Kermany et al. [1] — Transfer Learning in Pediatric Radiography: ",
         "Demonstrated the efficacy of transfer learning using an InceptionV3 architecture pre-trained on ImageNet to diagnose "
         "pediatric pneumonia and retinal diseases, reporting an accuracy of 92.8% with 93.2% sensitivity. Strengths: Established the benchmark "
         "pediatric cohort and proved that features learned on natural images transfer effectively to medical radiography. Inherent Limitations: "
         "The authors utilized a naive random splitting protocol that resulted in massive patient overlap between training and validation "
         "folds. Furthermore, InceptionV3 (23.8M parameters) exhibits high computational latency and provides no uncertainty estimation or edge optimization."
     )
-    add_numbered_item(doc, "2.", "Rajpurkar et al. (Stanford, 2017) — CheXNet: Radiologist-Level Pneumonia Detection: ",
+    add_numbered_item(doc, "2.", "Rajpurkar et al. [2] — CheXNet: Radiologist-Level Pneumonia Detection: ",
         "Introduced CheXNet, a 121-layer DenseNet architecture trained on 112,120 frontal chest radiographs to detect 14 "
         "thoracic diseases. The authors reported pneumonia detection performance exceeding average practicing radiologists (ROC-AUC 0.763). "
         "Strengths: Demonstrated dense feature reuse and utilized Grad-CAM for anatomical localization. Inherent Limitations: DenseNet-121 requires "
         "dense feature-map concatenation, creating severe memory bandwidth bottlenecks that prevent real-time execution on low-power microcontrollers. "
         "Additionally, CheXNet outputs uncalibrated sigmoid probabilities prone to overconfident false positives."
     )
-    add_numbered_item(doc, "3.", "Sandler et al. (CVPR, 2018) — MobileNetV2: Inverted Residuals and Linear Bottlenecks: ",
+    add_numbered_item(doc, "3.", "Sandler et al. [3] — MobileNetV2: Inverted Residuals and Linear Bottlenecks: ",
         "Engineered MobileNetV2 specifically for resource-constrained edge devices by introducing inverted residual blocks "
         "with linear bottlenecks and depthwise separable convolutions, drastically reducing floating-point operations (FLOPs) and parameter "
         "count (2.4M parameters). Strengths: Highly optimized for mobile ARM architectures and hardware DSP acceleration. Inherent Limitations: "
         "When trained from scratch or fine-tuned directly on small, noisy medical datasets with severe class imbalance, MobileNetV2 tends to "
         "underfit subtle pathological textures and exhibits unstable gradients, leading to elevated false-negative rates without teacher guidance."
     )
-    add_numbered_item(doc, "4.", "Oquab et al. / RAD-DINO (Meta AI / Radiology Foundation, 2023) — Self-Supervised ViTs: ",
+    add_numbered_item(doc, "4.", "Oquab et al. [4] and Pérez-García et al. [5] — Self-Supervised ViTs and RAD-DINO: ",
         "Formulated DINOv2, a self-supervised Vision Transformer pre-training methodology producing general-purpose visual "
         "representations. RAD-DINO extended this paradigm by pre-training a ViT-B/16 on millions of clinical chest radiographs without supervision. "
         "Strengths: Captures rich radiological semantics, global context, and subtle parenchymal textures without human annotations, achieving "
         "unprecedented linear probing AUCs (>0.98). Inherent Limitations: RAD-DINO encompasses 86.6 million parameters, processes images at "
         "518×518 resolution, and requires gigabytes of GPU VRAM, making it utterly impossible to deploy directly on edge triage devices."
     )
-    add_numbered_item(doc, "5.", "Guo et al. (ICML, 2017) — On Calibration of Modern Neural Networks: ",
+    add_numbered_item(doc, "5.", "Guo et al. [6] — On Calibration of Modern Neural Networks: ",
         "Conducted an extensive empirical study across modern neural network architectures, proving that modern deep models "
         "are poorly calibrated despite high accuracies. They demonstrated that post-hoc Temperature Scaling—a single-parameter variant of "
         "Platt scaling—effectively minimizes Expected Calibration Error (ECE) without degrading classification accuracy. Strengths: Computationally "
         "trivial post-processing that aligns predicted probabilities with true empirical risk. Inherent Limitations: Requires an independent, "
         "unleaked validation dataset to tune the temperature scalar T, and does not capture epistemic (model) uncertainty."
     )
-    add_numbered_item(doc, "6.", "Gal & Ghahramani (ICML, 2016) — Monte Carlo Dropout as a Bayesian Approximation: ",
+    add_numbered_item(doc, "6.", "Gal and Ghahramani [7] — Monte Carlo Dropout as a Bayesian Approximation: ",
         "Proved that dropout applied at test time across multiple forward passes acts as an approximate variational "
         "inference method in Bayesian neural networks. Strengths: Enables the quantification of epistemic (model) uncertainty without "
         "expensive Markov Chain Monte Carlo (MCMC) sampling. Inherent Limitations: Performing 20 to 50 forward passes through a heavy CNN "
         "on an edge device causes severe latency bottlenecks, necessitating decoupled architectures where uncertainty sampling is restricted to lightweight heads."
     )
-    add_numbered_item(doc, "7.", "McMahan et al. & Li et al. (AISTATS 2017 / MLSys 2020) — Federated Optimization: ",
+    add_numbered_item(doc, "7.", "McMahan et al. [8] and Li et al. [9] — Federated Optimization: ",
         "Established Federated Learning (FL) via Federated Averaging (FedAvg), enabling decentralized edge clients to "
-        "collaboratively train a global model by aggregating client weight updates. Li et al. proposed FedProx, introducing a proximal "
+        "collaboratively train a global model by aggregating client weight updates. Li et al. [9] proposed FedProx, introducing a proximal "
         "regularization term to stabilize convergence under heterogeneous (non-IID) data distributions. Strengths: Guarantees strict patient data "
         "privacy by transmitting only gradient updates rather than raw images. Inherent Limitations: Highly non-IID class distributions across "
         "clinical sites cause catastrophic client drift and divergence without server momentum or proximal damping."
@@ -892,12 +967,23 @@ def build_full_report():
     t_comp.alignment = WD_TABLE_ALIGNMENT.CENTER
     apply_table_borders(t_comp)
     populate_table_data(t_comp, table_comp_data, col_widths=[Inches(1.05), Inches(0.85), Inches(0.75), Inches(0.65), Inches(0.85), Inches(0.75), Inches(0.75), Inches(0.55)])
+    add_table_note(doc,
+        "The comparison spans eight architectural and clinical dimensions. TrustEdge-CXR is the only framework that simultaneously "
+        "enforces strict patient-level leakage control, sensitivity-prioritized triage, calibrated confidence, quantized edge "
+        "deployment, and federated training. The two ECE values reported for TrustEdge-CXR correspond to the validation and test "
+        "cohorts respectively.")
     
     doc.add_page_break()
     
     # CHAPTER 3: METHODOLOGY / FRAMEWORK DESIGN
     add_chapter_heading(doc, "3", "METHODOLOGY / FRAMEWORK DESIGN")
-    
+    add_body_p(doc,
+        "This chapter presents the proposed TrustEdge-CXR methodology in detail. It first describes the leakage-free data "
+        "partitioning and contrast-normalization pipeline that guarantees a trustworthy evaluation, then introduces the six-module "
+        "end-to-end system architecture that carries a radiograph from ingestion to clinical triage, and finally summarizes the "
+        "software engineering strategy and technology stack used for implementation."
+    )
+
     add_section_heading(doc, "3.1 Technical Approach Overview")
     add_body_p(doc,
         "The TrustEdge-CXR methodology is formulated upon a holistic, clinical-first engineering paradigm designed to resolve the tension "
@@ -927,7 +1013,7 @@ def build_full_report():
         "Pediatric chest radiographs exhibit substantial exposure variance, tube voltage fluctuations, "
         "and soft-tissue contrast attenuation. To standardize input distributions, every raw radiography DICOM/JPEG image is converted to "
         "single-channel 8-bit grayscale, resized via bicubic interpolation to a standardized canvas of 224×224 pixels, and processed through "
-        "Contrast Limited Adaptive Histogram Equalization (CLAHE). The CLAHE operator partitions the image into an 8×8 grid of contextual tiles, "
+        "Contrast Limited Adaptive Histogram Equalization (CLAHE) [14]. The CLAHE operator partitions the image into an 8×8 grid of contextual tiles, "
         "computes local cumulative distribution functions, and clips local contrast histograms at a threshold of 2.0 to prevent noise amplification "
         "in radiolucent lung fields. Preprocessed arrays are cached directly to disk in uint8 format, eliminating on-the-fly preprocessing overhead.",
         bold_prefix="Contrast Limited Adaptive Histogram Equalization: "
@@ -945,6 +1031,10 @@ def build_full_report():
     t_split.alignment = WD_TABLE_ALIGNMENT.CENTER
     apply_table_borders(t_split)
     populate_table_data(t_split, table_split_data, col_widths=[Inches(0.95), Inches(0.8), Inches(0.8), Inches(0.85), Inches(0.95), Inches(0.85), Inches(0.95)])
+    add_table_note(doc,
+        "Percentages are computed within each partition. The official test set is preserved exactly as released by Kermany et al. [1]; "
+        "the training and validation cohorts are re-partitioned strictly by patient identity via MD5 hashing, guaranteeing a verified "
+        "0% subject overlap across all three partitions.")
     
     fig3_1_path = os.path.join(ARTIFACTS_DIR, "sample_comparison.png")
     add_image_figure(doc, fig3_1_path, "Figure 3.1: Comparison of Pediatric Chest Radiographs Across Diagnostic Classes (Raw vs. CLAHE Preprocessed)", width=Inches(5.7))
@@ -963,17 +1053,17 @@ def build_full_report():
         "Enforces 0% subject overlap via MD5 hashing and constructs normalized 224×224 CLAHE caches."
     )
     add_numbered_item(doc, "Module 2", "Foundation Teacher Extraction: ",
-        "Executes an 86.6M parameter RAD-DINO Vision Transformer on 518×518 radiographs to extract "
+        "Executes an 86.6M parameter RAD-DINO Vision Transformer [5] on 518×518 radiographs to extract "
         "768-dimensional self-supervised feature embeddings. An MLP projection head trained on these embeddings establishes an upper-bound "
         "clinical diagnostic ceiling (99.9% validation AUC) and generates out-of-fold soft teacher logits z_t for distillation."
     )
     add_numbered_item(doc, "Module 3", "Distilled MobileNetV2 Student: ",
         "Implements a lightweight 2.4M parameter convolutional student trained via a composite "
-        "loss function combining class-balanced Focal Loss (addressing the 3.17:1 pneumonia imbalance) and logit-matching distillation loss."
+        "loss function combining class-balanced Focal Loss [10] (addressing the 3.17:1 pneumonia imbalance) and logit-matching distillation loss [11]."
     )
     add_numbered_item(doc, "Module 4", "Trust & Selective Referral Engine: ",
-        "Optimizes a scalar temperature parameter T via Platt scaling to eliminate overconfidence, "
-        "combined with 20 Monte Carlo Dropout forward passes to compute epistemic predictive variance. Borderline cases are automatically "
+        "Optimizes a scalar temperature parameter T via Platt scaling [6] to eliminate overconfidence, "
+        "combined with 20 Monte Carlo Dropout [7] forward passes to compute epistemic predictive variance. Borderline cases are automatically "
         "referred to a human specialist."
     )
     add_numbered_item(doc, "Module 5", "Decoupled INT8 Edge Bundle: ",
@@ -981,7 +1071,7 @@ def build_full_report():
         "retaining the lightweight classification head in vectorized NumPy (658 KB), achieving sub-13 ms latency on ARM microprocessors."
     )
     add_numbered_item(doc, "Module 6", "Decentralized Federated Learning: ",
-        "Coordinates privacy-preserving model updates across five hospital silos using FedAvg with "
+        "Coordinates privacy-preserving model updates across five hospital silos using FedAvg [8] with "
         "server momentum and proximal regularization to guarantee robust cross-site convergence without centralizing sensitive medical studies."
     )
     
@@ -999,7 +1089,13 @@ def build_full_report():
     
     # CHAPTER 4: CASE STUDY IMPLEMENTATION / ANALYSIS
     add_chapter_heading(doc, "4", "CASE STUDY IMPLEMENTATION / ANALYSIS")
-    
+    add_body_p(doc,
+        "This chapter documents the practical realization of the framework. It walks chronologically through the six execution "
+        "stages of the pipeline, presents the core mathematical formulations that govern training, calibration, referral, and "
+        "federated aggregation, and records the complete hyperparameter configuration. The chapter closes with an account of the "
+        "major engineering challenges encountered and the mitigation strategies applied to resolve them."
+    )
+
     add_section_heading(doc, "4.1 Execution Walkthrough and Step-by-Step Analysis")
     add_body_p(doc,
         "The practical execution of TrustEdge-CXR was systematically conducted across six chronological operational phases, "
@@ -1055,13 +1151,13 @@ def build_full_report():
         "The mathematical foundations governing the TrustEdge-CXR training and inference engines are formulated below:"
     )
     add_numbered_item(doc, "1.", "Class-Balanced Focal Loss: ",
-        "To counter the 3.17:1 class imbalance and prevent trivial majority-class convergence, a class-weighted Focal Loss is employed:\n"
+        "To counter the 3.17:1 class imbalance and prevent trivial majority-class convergence, a class-weighted Focal Loss [10] is employed:\n"
         "    FL(p_t) = -α_t · (1 - p_t)^γ · log(p_t)\n"
         "where p_t = p if y = 1 and p_t = 1 - p if y = 0. The focusing parameter is set to γ = 2.0 to dynamically down-weight easily classified "
         "normal radiographs, while α_t is set to α_pos = 0.259 for pneumonia and α_neg = 0.741 for normal cases, scaling inversely with class prevalence."
     )
     add_numbered_item(doc, "2.", "Logit-Matching Distillation Loss: ",
-        "Knowledge transfer from the RAD-DINO teacher to the MobileNetV2 student operates directly in the logit domain rather than through "
+        "Knowledge transfer [11] from the RAD-DINO teacher to the MobileNetV2 student operates directly in the logit domain rather than through "
         "soft probabilities, avoiding gradient vanishing in deep saturating sigmoids:\n"
         "    L_KD(z_s, z_t) = (1 / B) · Σ_{i=1}^B (z_{s,i} - z_{t,i})^2\n"
         "The composite student training objective unifies classification supervision and foundation knowledge transfer:\n"
@@ -1069,13 +1165,13 @@ def build_full_report():
         "where λ_KD = 0.5 balances ground-truth cross-entropy and teacher representation alignment."
     )
     add_numbered_item(doc, "3.", "Temperature Scaling: ",
-        "Post-hoc probability calibration transforms uncalibrated student logit z into calibrated posterior probability p̂ via temperature scalar T > 0:\n"
+        "Post-hoc probability calibration [6] transforms uncalibrated student logit z into calibrated posterior probability p̂ via temperature scalar T > 0:\n"
         "    p̂ = σ(z / T) = 1 / (1 + exp(-z / T))\n"
         "The optimal scalar T* is determined by minimizing negative log-likelihood on the unleaked validation set D_val:\n"
         "    T* = argmin_T { -Σ_{(x_i, y_i) ∈ D_val} [y_i · log σ(z_i / T) + (1 - y_i) · log(1 - σ(z_i / T))] }"
     )
     add_numbered_item(doc, "4.", "Monte Carlo Epistemic Uncertainty & Referral Triage: ",
-        "Epistemic (model) uncertainty is estimated at runtime by activating Dropout (p = 0.3) during inference across M = 20 stochastic passes:\n"
+        "Epistemic (model) uncertainty [7] is estimated at runtime by activating Dropout (p = 0.3) during inference across M = 20 stochastic passes:\n"
         "    p_bar = (1 / M) · Σ_{m=1}^M σ(z^{(m)} / T*)\n"
         "    σ²_MC = (1 / M) · Σ_{m=1}^M (σ(z^{(m)} / T*) - p_bar)²\n"
         "The automated triage decision rule defines whether an image is diagnosed autonomously or referred to a radiologist:\n"
@@ -1084,7 +1180,7 @@ def build_full_report():
         "                    REFER TO RADIOLOGIST        if |p̂ - 0.5| < τ or σ²_MC > σ²_threshold }"
     )
     add_numbered_item(doc, "5.", "Federated Optimization with Proximal Regularization: ",
-        "In the federated setting, each client k minimizes a localized objective incorporating FedProx proximal regularization to constrain "
+        "In the federated setting, each client k minimizes a localized objective incorporating FedProx [9] proximal regularization to constrain "
         "local weights w from drifting arbitrarily far from the global server weights w^t:\n"
         "    L_k(w) = L_local(w; D_k) + (μ / 2) · ||w - w^t||²\n"
         "Server aggregation updates global weights using client sample-size weighting n_k and server momentum β = 0.5:\n"
@@ -1112,6 +1208,10 @@ def build_full_report():
     t_hyper.alignment = WD_TABLE_ALIGNMENT.CENTER
     apply_table_borders(t_hyper)
     populate_table_data(t_hyper, table_hyper_data, col_widths=[Inches(1.2), Inches(1.5), Inches(1.5), Inches(1.57)])
+    add_table_note(doc,
+        "All hyperparameters were selected exclusively on the unleaked validation partition. No test-set information was used for "
+        "model selection, threshold tuning, temperature fitting, or referral calibration, preserving the integrity of the reported "
+        "test metrics.")
     
     add_section_heading(doc, "4.3 Engineering Challenges Faced and Mitigation Strategies")
     add_body_p(doc,
@@ -1151,7 +1251,13 @@ def build_full_report():
     
     # CHAPTER 5: RESULTS AND DISCUSSION
     add_chapter_heading(doc, "5", "RESULTS AND DISCUSSION")
-    
+    add_body_p(doc,
+        "This chapter reports and interprets the empirical evaluation of TrustEdge-CXR on the official unseen test cohort. "
+        "A comprehensive benchmark of all trained models is presented first, followed by detailed analyses of the selective "
+        "referral mechanism, INT8 edge quantization, federated convergence, and explanation fidelity. The chapter closes with a "
+        "discussion of how the system integrates into real-world clinical deployment workflows."
+    )
+
     add_section_heading(doc, "5.1 Experimental Findings and Empirical Benchmark")
     add_body_p(doc,
         "The quantitative evaluation of TrustEdge-CXR was executed on the official unseen 624-patient test cohort (comprising 234 normal "
@@ -1177,6 +1283,10 @@ def build_full_report():
     t_bench.alignment = WD_TABLE_ALIGNMENT.CENTER
     apply_table_borders(t_bench)
     populate_table_data(t_bench, table_bench_data, col_widths=[Inches(1.15), Inches(0.55), Inches(0.55), Inches(0.65), Inches(0.55), Inches(0.55), Inches(0.55), Inches(0.47), Inches(0.75)])
+    add_table_note(doc,
+        "Thresholds marked with * were tuned on the validation cohort. The 'Auto-Decided Only' row is computed on the 489 of 624 cases "
+        "(78.4%) that the selective referral engine chose to decide autonomously; the remaining 135 ambiguous cases were escalated for "
+        "human review. TP = true positives, TN = true negatives, FP = false positives, FN = false negatives.")
     
     fig5_1_path = os.path.join(ARTIFACTS_DIR, "confusion_matrices.png")
     add_image_figure(doc, fig5_1_path, "Figure 5.1: Confusion Matrices Across Baseline, Teacher, Student, and Edge Deployments", width=Inches(5.6))
@@ -1202,6 +1312,10 @@ def build_full_report():
     t_ref.alignment = WD_TABLE_ALIGNMENT.CENTER
     apply_table_borders(t_ref)
     populate_table_data(t_ref, table_ref_data, col_widths=[Inches(1.15), Inches(0.75), Inches(0.75), Inches(0.75), Inches(0.75), Inches(0.81), Inches(0.81)])
+    add_table_note(doc,
+        "Coverage is the fraction of cases decided autonomously. The configured operating point (τ = 0.0594) was fixed on validation "
+        "data targeting a 10% referral rate; the higher observed test referral rate (21.6%) reflects distributional differences between "
+        "the validation and test cohorts and is reported transparently.")
     
     add_table_caption(doc, "Table 5.3: Edge Quantization, Storage Footprint, and Runtime CPU Latency Profile")
     table_edge_data = [
@@ -1216,6 +1330,10 @@ def build_full_report():
     t_edge.alignment = WD_TABLE_ALIGNMENT.CENTER
     apply_table_borders(t_edge)
     populate_table_data(t_edge, table_edge_data, col_widths=[Inches(1.2), Inches(0.85), Inches(0.95), Inches(0.95), Inches(0.82), Inches(1.0)])
+    add_table_note(doc,
+        "Latency denotes the mean per-image inference time measured on the CPU over the official test set. Decision agreement is the "
+        "fraction of images for which the INT8 bundle emits the same class as the full-precision FP32 model; the mean absolute "
+        "probability shift of 0.0184 confirms negligible quantization drift.")
     
     add_table_caption(doc, "Table 5.4: Explanation Faithfulness and Perturbation Stability Correlation (PSC) Metrics")
     table_exp_data = [
@@ -1227,6 +1345,10 @@ def build_full_report():
     t_exp.alignment = WD_TABLE_ALIGNMENT.CENTER
     apply_table_borders(t_exp)
     populate_table_data(t_exp, table_exp_data, col_widths=[Inches(1.2), Inches(0.75), Inches(0.85), Inches(1.05), Inches(0.96), Inches(0.96)])
+    add_table_note(doc,
+        "Perturbation Stability Correlation (PSC) is the Spearman rank correlation between input perturbation magnitude and saliency "
+        "map displacement over 100 test images. Faithful explanations should remain stable when predictions are unchanged and shift "
+        "sharply when predictions flip; Grad-CAM [12] exhibits the stronger stability-to-flip contrast (5.5×) versus Grad-CAM++ [13] (3.6×).")
     
     add_section_heading(doc, "5.2 In-Depth Scientific and Clinical Discussion")
     add_body_p(doc,
@@ -1262,7 +1384,7 @@ def build_full_report():
         "sensitive pediatric health records."
     )
     add_numbered_item(doc, "5.", "Auditable Explainability and Saliency Fidelity: ",
-        "The Perturbation Stability Correlation audit (Table 5.4) confirms the biological fidelity of Grad-CAM saliency maps. Under subtle input "
+        "The Perturbation Stability Correlation audit (Table 5.4) confirms the biological fidelity of Grad-CAM [12] saliency maps. Under subtle input "
         "perturbations that leave the model's diagnostic prediction unchanged, Grad-CAM heatmaps shift by only 4.9%. In contrast, when perturbations "
         "cause the model's prediction to flip, the heatmap shifts by 27.1% (a 5.5× increase). This strong rank correlation (ρ = 0.509) proves that "
         "the visual heatmaps reflect genuine pathological feature attribution rather than edge artifacts."
@@ -1274,7 +1396,7 @@ def build_full_report():
     )
     add_numbered_item(doc, "1.", "Rural Health Center Point-of-Care Kiosk: ",
         "Deployed on low-cost single-board computers (Raspberry Pi 4B, 4GB RAM) interfaced via USB to digital radiography flat-panel detectors. "
-        "The self-contained edge_infer.py script executes locally in under 15 ms, outputting instantaneous triage recommendations and Grad-CAM "
+        "The self-contained edge_infer.py script executes locally in under 15 ms, outputting instantaneous triage recommendations and Grad-CAM [12] "
         "overlays on an attached touchscreen monitor without requiring an active internet connection."
     )
     add_numbered_item(doc, "2.", "Mobile Screening Vans and Low-Bandwidth Tele-Radiology: ",
@@ -1292,7 +1414,12 @@ def build_full_report():
     
     # CHAPTER 6: CONCLUSION AND FUTURE SCOPE
     add_chapter_heading(doc, "6", "CONCLUSION AND FUTURE SCOPE")
-    
+    add_body_p(doc,
+        "This chapter concludes the report. It consolidates the technical contributions delivered by the TrustEdge-CXR case study "
+        "and charts concrete directions for future research and engineering extensions, spanning richer diagnostic taxonomies, "
+        "multimodal reporting, on-device federated personalization, and prospective clinical validation."
+    )
+
     add_section_heading(doc, "6.1 Summary of Technical Contributions")
     add_body_p(doc,
         "This case study successfully designed, implemented, and validated TrustEdge-CXR, a clinically grounded, edge-deployable, and "
@@ -1319,7 +1446,7 @@ def build_full_report():
         "Dirichlet distribution (α = 0.5), attaining 0.9655 AUC without centralizing raw medical images."
     )
     add_numbered_item(doc, "6.", "Auditable Visual Explainability: ",
-        "Validated visual saliency faithfulness using Perturbation Stability Correlation (ρ = 0.509), proving that Grad-CAM heatmaps reflect "
+        "Validated visual saliency faithfulness using Perturbation Stability Correlation (ρ = 0.509), proving that Grad-CAM [12] heatmaps reflect "
         "genuine pathological feature attribution."
     )
     
